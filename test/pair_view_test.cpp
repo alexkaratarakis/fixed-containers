@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <span>
+
 namespace fixed_containers
 {
 TEST(PairView, std_get)
@@ -74,6 +76,9 @@ TEST(PairView, constness)
         static_assert(std::is_same_v<decltype(s.first), const int&>);
         static_assert(std::is_same_v<decltype(s.second), const double&>);
     }
+
+    std::vector<const int*> foo{};
+    std::span<const int*> bar{foo};
 }
 
 TEST(PairView, References)
