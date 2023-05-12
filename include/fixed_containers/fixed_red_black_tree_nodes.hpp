@@ -261,12 +261,9 @@ public:  // Public so this type is a structural type and can thus be used in tem
     NodeIndex IMPLEMENTATION_DETAIL_DO_NOT_USE_right_index_ = NULL_INDEX;
 
 public:
-    explicit constexpr CompactRedBlackTreeNode(const K& k) noexcept
-      : IMPLEMENTATION_DETAIL_DO_NOT_USE_key_(k)
-    {
-    }
-    explicit constexpr CompactRedBlackTreeNode(K&& k) noexcept
-      : IMPLEMENTATION_DETAIL_DO_NOT_USE_key_(std::move(k))
+    template <typename... Args>
+    explicit(sizeof...(Args) == 1) constexpr CompactRedBlackTreeNode(Args&&... args) noexcept
+      : IMPLEMENTATION_DETAIL_DO_NOT_USE_key_{std::forward<Args>(args)...}
     {
     }
 

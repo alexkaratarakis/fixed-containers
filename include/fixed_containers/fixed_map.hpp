@@ -3,6 +3,7 @@
 #include "fixed_containers/bidirectional_iterator.hpp"
 #include "fixed_containers/erase_if.hpp"
 #include "fixed_containers/fixed_red_black_tree.hpp"
+#include "fixed_containers/pair.hpp"
 #include "fixed_containers/pair_view.hpp"
 #include "fixed_containers/preconditions.hpp"
 #include "fixed_containers/source_location.hpp"
@@ -72,30 +73,58 @@ public:
     using key_type = K;
     using mapped_type = V;
     using value_type = std::pair<const K, V>;
-    using reference = PairView<const K, V>&;
-    using const_reference = const PairView<const K, const V>&;
+    using reference = Pair<const K, V>&;
+    using const_reference = const Pair<const K, V>&;
     using pointer = std::add_pointer_t<reference>;
     using const_pointer = std::add_pointer_t<const_reference>;
 
 private:
+    struct ComparePairFirstOnly
+    {
+        Compare compare_first{};
+
+        constexpr bool operator()(const Pair<const K, V>& lhs, const Pair<const K, V>& rhs) const
+        {
+            return compare_first(lhs.first(), rhs.first());
+        }
+        constexpr bool operator()(const Pair<const K, V>& lhs,
+                                  const std::pair<const K, V>& rhs) const
+        {
+            return compare_first(lhs.first(), rhs.first);
+        }
+        constexpr bool operator()(const std::pair<const K, V>& lhs,
+                                  const Pair<const K, V>& rhs) const
+        {
+            return compare_first(lhs.first, rhs.first());
+        }
+        template <class K0>
+        constexpr bool operator()(const K0& lhs, const Pair<const K, V>& rhs) const
+        {
+            return compare_first(lhs, rhs.first());
+        }
+        template <class K0>
+        constexpr bool operator()(const Pair<const K, V>& lhs, const K0& rhs) const
+        {
+            return compare_first(lhs.first(), rhs);
+        }
+    };
+
     using NodeIndex = fixed_red_black_tree_detail::NodeIndex;
     using NodeIndexAndParentIndex = fixed_red_black_tree_detail::NodeIndexAndParentIndex;
     static constexpr NodeIndex NULL_INDEX = fixed_red_black_tree_detail::NULL_INDEX;
-    using Tree = fixed_red_black_tree_detail::
-        FixedRedBlackTree<K, V, MAXIMUM_SIZE, Compare, COMPACTNESS, StorageTemplate>;
+    using Tree = fixed_red_black_tree_detail::FixedRedBlackTreeSet<Pair<const K, V>,
+                                                                   MAXIMUM_SIZE,
+                                                                   ComparePairFirstOnly,
+                                                                   COMPACTNESS,
+                                                                   StorageTemplate>;
 
     template <bool IS_CONST>
     struct PairProvider
     {
         using ConstOrMutableTree = std::conditional_t<IS_CONST, const Tree, Tree>;
-        using ConstOrMutablePairView =
-            std::conditional_t<IS_CONST,
-                               pair_view_detail::AssignablePairView<const K, const V>,
-                               pair_view_detail::AssignablePairView<const K, V>>;
 
         ConstOrMutableTree* tree_;
         NodeIndex current_index_;
-        ConstOrMutablePairView storage_;  // Needed for liveness
 
         constexpr PairProvider() noexcept
           : PairProvider{nullptr, MAXIMUM_SIZE}
@@ -106,12 +135,7 @@ private:
                                const NodeIndex& current_index) noexcept
           : tree_{tree}
           , current_index_{current_index}
-          , storage_{nullptr, nullptr}
         {
-            if (tree != nullptr)
-            {
-                update_storage();
-            }
         }
 
         constexpr PairProvider(const PairProvider&) = default;
@@ -138,8 +162,6 @@ private:
                 current_index_ = tree_->index_of_successor_at(current_index_);
                 current_index_ = replace_null_index_with_max_size_for_end_iterator(current_index_);
             }
-
-            update_storage();
         }
         constexpr void recede() noexcept
         {
@@ -151,22 +173,17 @@ private:
             {
                 current_index_ = tree_->index_of_predecessor_at(current_index_);
             }
-
-            update_storage();
         }
 
         constexpr const_reference get() const noexcept
             requires IS_CONST
         {
-            return storage_;
+            return tree_->node_at(current_index_).key();
         }
         constexpr reference get() const noexcept
             requires(not IS_CONST)
         {
-            // The function is tagged `const` and would add a `const` to the returned type.
-            // This is usually fine, but PairView intentionally propagates its constness to each of
-            // its views. Therefore, remove the `const`.
-            return const_cast<reference>(static_cast<const PairView<const K, V>&>(storage_));
+            return tree_->node_at(current_index_).key();
         }
 
         constexpr bool operator==(const PairProvider& other) const noexcept
@@ -176,17 +193,6 @@ private:
         constexpr bool operator==(const PairProvider<!IS_CONST>& other) const noexcept
         {
             return tree_ == other.tree_ && current_index_ == other.current_index_;
-        }
-
-    private:
-        constexpr void update_storage() noexcept
-        {
-            if (current_index_ < MAXIMUM_SIZE && tree_->contains_at(current_index_))
-            {
-                fixed_red_black_tree_detail::RedBlackTreeNodeView node =
-                    tree_->node_at(current_index_);
-                storage_ = ConstOrMutablePairView{&node.key(), &node.value()};
-            }
         }
     };
 
@@ -227,7 +233,7 @@ public:
     }
 
     explicit constexpr FixedMap(const Compare& comparator) noexcept
-      : IMPLEMENTATION_DETAIL_DO_NOT_USE_tree_{comparator}
+      : IMPLEMENTATION_DETAIL_DO_NOT_USE_tree_{ComparePairFirstOnly{comparator}}
     {
     }
 
@@ -261,7 +267,7 @@ public:
         {
             CheckingType::out_of_range(key, size(), loc);
         }
-        return tree().node_at(i).value();
+        return tree().node_at(i).key().second();
     }
     [[nodiscard]] constexpr const V& at(
         const K& key,
@@ -273,7 +279,7 @@ public:
         {
             CheckingType::out_of_range(key, size(), loc);
         }
-        return tree().node_at(i).value();
+        return tree().node_at(i).key().second();
     }
 
     constexpr V& operator[](const K& key) noexcept
@@ -281,26 +287,26 @@ public:
         NodeIndexAndParentIndex np = tree().index_of_node_with_parent(key);
         if (tree().contains_at(np.i))
         {
-            return tree().node_at(np.i).value();
+            return tree().node_at(np.i).key().second();
         }
 
         // Cannot capture real source_location for operator[]
         check_not_full(std_transition::source_location::current());
-        tree().insert_new_at(np, key);
-        return tree().node_at(np.i).value();
+        tree().insert_new_at(np, key, V{});
+        return tree().node_at(np.i).key().second();
     }
     constexpr V& operator[](K&& key) noexcept
     {
         NodeIndexAndParentIndex np = tree().index_of_node_with_parent(key);
         if (tree().contains_at(np.i))
         {
-            return tree().node_at(np.i).value();
+            return tree().node_at(np.i).key().second();
         }
 
         // Cannot capture real source_location for operator[]
         check_not_full(std_transition::source_location::current());
-        tree().insert_new_at(np, std::move(key));
-        return tree().node_at(np.i).value();
+        tree().insert_new_at(np, std::move(key), V{});
+        return tree().node_at(np.i).key().second();
     }
 
     constexpr const_iterator cbegin() const noexcept
@@ -354,7 +360,7 @@ public:
         const std_transition::source_location& loc =
             std_transition::source_location::current()) noexcept
     {
-        NodeIndexAndParentIndex np = tree().index_of_node_with_parent(value.first);
+        NodeIndexAndParentIndex np = tree().index_of_node_with_parent(value);
         if (tree().contains_at(np.i))
         {
             return {create_iterator(np.i), false};
@@ -394,7 +400,7 @@ public:
         NodeIndexAndParentIndex np = tree().index_of_node_with_parent(key);
         if (tree().contains_at(np.i))
         {
-            tree().node_at(np.i).value() = std::forward<M>(obj);
+            tree().node_at(np.i).key().second() = std::forward<M>(obj);
             return {create_iterator(np.i), false};
         }
 
@@ -413,7 +419,7 @@ public:
         NodeIndexAndParentIndex np = tree().index_of_node_with_parent(key);
         if (tree().contains_at(np.i))
         {
-            tree().node_at(np.i).value() = std::forward<M>(obj);
+            tree().node_at(np.i).key().second() = std::forward<M>(obj);
             return {create_iterator(np.i), false};
         }
 
@@ -753,6 +759,37 @@ private:
         const NodeIndex l = tree().index_of_node_ceiling(np);
         const NodeIndex r = tree().contains_at(np.i) ? tree().index_of_successor_at(l) : l;
         return {create_const_iterator(l), create_const_iterator(r)};
+    }
+
+    constexpr std::pair<iterator, bool> insert_internal(
+        const Pair<const K, V>& value,
+        const std_transition::source_location& loc =
+            std_transition::source_location::current()) noexcept
+    {
+        NodeIndexAndParentIndex np = tree().index_of_node_with_parent(value.first);
+        if (tree().contains_at(np.i))
+        {
+            return {create_iterator(np.i), false};
+        }
+
+        check_not_full(loc);
+        tree().insert_new_at(np, value.first, value.second);
+        return {create_iterator(np.i), true};
+    }
+    constexpr std::pair<iterator, bool> insert_internal(
+        Pair<const K, V>&& value,
+        const std_transition::source_location& loc =
+            std_transition::source_location::current()) noexcept
+    {
+        NodeIndexAndParentIndex np = tree().index_of_node_with_parent(value);
+        if (tree().contains_at(np.i))
+        {
+            return {create_iterator(np.i), false};
+        }
+
+        check_not_full(loc);
+        tree().insert_new_at(np, value.first, std::move(value.second));
+        return {create_iterator(np.i), true};
     }
 };
 

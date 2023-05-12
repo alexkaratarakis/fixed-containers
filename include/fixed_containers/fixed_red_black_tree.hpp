@@ -155,7 +155,8 @@ public:
         fix_after_insertion(np.i);
     }
 
-    constexpr size_type delete_node(const K& key) noexcept
+    template <class K0>
+    constexpr size_type delete_node(const K0& key) noexcept
     {
         const NodeIndex i = index_of_node_or_null(key);
         if (!contains_at(i))
@@ -267,7 +268,7 @@ public:
         // If it would have been the left child, the parent is the closest greater value
         return index_of_predecessor_at(np.parent);
     }
-    [[nodiscard]] constexpr NodeIndex index_of_node_lower(const Strict<K> auto& key) const noexcept
+    [[nodiscard]] constexpr NodeIndex index_of_node_lower(const auto& key) const noexcept
     {
         return index_of_node_lower(index_of_node_with_parent(key));
     }
@@ -289,7 +290,7 @@ public:
         // If it would have been the right child, the parent is the closest lesser value
         return index_of_successor_at(np.parent);
     }
-    [[nodiscard]] constexpr NodeIndex index_of_node_higher(const Strict<K> auto& key) const noexcept
+    [[nodiscard]] constexpr NodeIndex index_of_node_higher(const auto& key) const noexcept
     {
         return index_of_node_higher(index_of_node_with_parent(key));
     }
@@ -303,7 +304,7 @@ public:
 
         return index_of_node_lower(np);
     }
-    [[nodiscard]] constexpr NodeIndex index_of_node_floor(const Strict<K> auto& key) const noexcept
+    [[nodiscard]] constexpr NodeIndex index_of_node_floor(const auto& key) const noexcept
     {
         return index_of_node_floor(index_of_node_with_parent(key));
     }
@@ -317,8 +318,7 @@ public:
 
         return index_of_node_higher(np);
     }
-    [[nodiscard]] constexpr NodeIndex index_of_node_ceiling(
-        const Strict<K> auto& key) const noexcept
+    [[nodiscard]] constexpr NodeIndex index_of_node_ceiling(const auto& key) const noexcept
     {
         return index_of_node_ceiling(index_of_node_with_parent(key));
     }
